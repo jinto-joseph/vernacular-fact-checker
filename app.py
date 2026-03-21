@@ -363,9 +363,12 @@ def verdict_css_class(verdict: str) -> str:
 
 
 def verdict_emoji(verdict: str) -> str:
-    return {"false": "✗ FALSE", "true": "✓ TRUE", "misleading": "⚠ MISLEADING"}.get(
-        verdict.lower(), verdict.upper()
-    )
+    return {
+        "false": "✗ FALSE",
+        "true": "✓ TRUE",
+        "misleading": "⚠ MISLEADING",
+        "unverified": "? UNVERIFIED",
+    }.get(verdict.lower(), verdict.upper())
 
 
 def confidence_bar(confidence: float):

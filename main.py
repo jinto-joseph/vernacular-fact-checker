@@ -47,36 +47,18 @@ class VerifiedFact:
 
 
 VERIFIED_FACTS: List[VerifiedFact] = [
-    VerifiedFact(
-        fact_id="F001",
-        text="No nationwide bank closure was announced by RBI in 2026.",
-        verdict="False",
-        tags=("rbi", "bank", "closure", "nationwide", "2026"),
-    ),
-    VerifiedFact(
-        fact_id="F002",
-        text="India has no policy that gives every citizen 5000 rupees per day.",
-        verdict="False",
-        tags=("india", "policy", "citizen", "5000", "per", "day"),
-    ),
-    VerifiedFact(
-        fact_id="F003",
-        text="Heatwaves can happen in March in multiple Indian states.",
-        verdict="True",
-        tags=("heatwave", "march", "indian", "states", "weather"),
-    ),
-    VerifiedFact(
-        fact_id="F004",
-        text="The Election Commission publishes official polling schedules on its portal.",
-        verdict="True",
-        tags=("election", "commission", "official", "schedule", "portal"),
-    ),
-    VerifiedFact(
-        fact_id="F005",
-        text="Government schemes are announced through official notifications, not random forwards.",
-        verdict="Misleading",
-        tags=("government", "scheme", "official", "notification", "forward"),
-    ),
+    VerifiedFact(fact_id="F001", text="No nationwide bank closure was announced by RBI in 2026.", verdict="False", tags=("rbi", "bank", "banks", "closure", "close", "nationwide", "2026", "reserve")),
+    VerifiedFact(fact_id="F002", text="India has no policy that gives every citizen 5000 rupees per day.", verdict="False", tags=("india", "policy", "citizen", "citizens", "5000", "rupees", "per", "day", "money", "cash", "free")),
+    VerifiedFact(fact_id="F003", text="Heatwaves can happen in March in multiple Indian states.", verdict="True", tags=("heatwave", "heat", "march", "indian", "india", "states", "weather", "temperature", "imd", "alert")),
+    VerifiedFact(fact_id="F004", text="The Election Commission publishes official polling schedules on its portal.", verdict="True", tags=("election", "elections", "commission", "official", "schedule", "polling", "portal", "vote", "voting", "dates")),
+    VerifiedFact(fact_id="F005", text="Government schemes are announced through official notifications, not random forwards.", verdict="Misleading", tags=("government", "scheme", "schemes", "official", "notification", "forward", "whatsapp", "viral", "message")),
+    VerifiedFact(fact_id="F006", text="Viral death claims about public figures are frequently false and unverified.", verdict="Misleading", tags=("dead", "death", "died", "killed", "passed", "away", "alive", "hoax", "fake", "no", "more")),
+    VerifiedFact(fact_id="F007", text="No new demonetisation or currency ban has been officially announced in India.", verdict="False", tags=("demonetisation", "demonetization", "currency", "note", "notes", "ban", "banned", "invalid", "rupee", "rs")),
+    VerifiedFact(fact_id="F008", text="Internet shutdowns in India are officially notified by state governments.", verdict="Misleading", tags=("internet", "shutdown", "network", "mobile", "data", "blocked", "ban", "suspended", "offline")),
+    VerifiedFact(fact_id="F009", text="Unverified claims about free government giveaways are commonly circulated misinformation.", verdict="Misleading", tags=("free", "giveaway", "gift", "scheme", "apply", "link", "click", "register", "form", "benefit", "subsidy")),
+    VerifiedFact(fact_id="F010", text="Fuel prices in India are revised periodically by oil marketing companies.", verdict="Misleading", tags=("petrol", "diesel", "fuel", "price", "prices", "reduced", "free", "cheap", "litre", "oil")),
+    VerifiedFact(fact_id="F011", text="Health advisories should be verified through official government or WHO sources.", verdict="Misleading", tags=("covid", "virus", "vaccine", "disease", "health", "medicine", "cure", "hospital", "doctor", "outbreak")),
+    VerifiedFact(fact_id="F012", text="Military operations and border situations are officially communicated by the Ministry of Defence.", verdict="Misleading", tags=("army", "military", "war", "attack", "border", "soldier", "soldiers", "china", "pakistan", "strike", "operation")),
 ]
 
 
@@ -241,10 +223,21 @@ def verify_claim_against_fact(
     score = float(retrieved["retrieval_score"])
     verdict = str(retrieved["base_verdict"])
 
+    # No match at all — do not show a misleading fact, return unverified
+    if score == 0.0:
+        return {
+            "verdict": "Unverified",
+            "confidence": 0.35,
+            "matched_fact_id": "N/A",
+            "matched_fact": "No matching fact found in the verified fact store for this claim.",
+            "retrieval_score": score,
+        }
+
+    # Weak match — downgrade to Misleading
     if score < 0.2:
         verdict = "Misleading"
 
-    confidence = round(min(0.99, max(0.35, 0.45 + score)), 3)
+    confidence = round(min(0.99, max(0.4, 0.45 + score)), 3)
 
     return {
         "verdict": verdict,
