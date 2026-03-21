@@ -33,3 +33,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+img.png
+*.png
+*.jpg
+*.jpeg
