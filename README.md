@@ -1,3 +1,12 @@
+---
+title: Vernacular Fact Checker
+emoji: 🔍
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # Automated Fact-Checker for Vernacular News
 
 High-throughput misinformation detection pipeline for Indian social media posts. Strips non-factual noise before verification to reduce compute cost and increase throughput.
@@ -382,3 +391,4 @@ api_key = os.getenv("FACTCHECK_API_KEY")
 - "We trained and compared three models — MLP, LinearSVC, RandomForest — and selected the best by test accuracy."
 - "Our API supports single, batch, and image-based inference through a consistent pipeline."
 - "The architecture is stateless and horizontally scalable, with a clear upgrade path to production retrieval."
+
