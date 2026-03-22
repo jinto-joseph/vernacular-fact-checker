@@ -9,11 +9,23 @@ pinned: false
 
 # Automated Fact-Checker for Vernacular News
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-HuggingFace%20Spaces-blue)](https://jo-7-vernacular-fact-checker.hf.space)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-HuggingFace%20Spaces-blue)](https://huggingface.co/spaces/JO-7/vernacular-fact-checker)
+[![Streamlit UI](https://img.shields.io/badge/Streamlit-UI-red)](https://jo-7-vernacular-fact-checker.hf.space)
 [![API Docs](https://img.shields.io/badge/API-Swagger%20UI-green)](https://jo-7-vernacular-fact-checker.hf.space/docs)
 [![GitHub](https://img.shields.io/badge/GitHub-vernacular--fact--checker-black)](https://github.com/jinto-joseph/vernacular-fact-checker)
 
 High-throughput misinformation detection pipeline for Indian social media. Strips non-factual noise before verification to reduce compute cost and increase throughput — satisfying the Pipeline Optimization technique requirement.
+
+---
+
+## Live Deployment
+
+| Link | Description |
+|---|---|
+| [HuggingFace Space](https://huggingface.co/spaces/JO-7/vernacular-fact-checker) | Main deployed app |
+| [Streamlit UI](https://jo-7-vernacular-fact-checker.hf.space) | Interactive fact-checker interface |
+| [API Docs](https://jo-7-vernacular-fact-checker.hf.space/docs) | Swagger UI for all endpoints |
+| [Health Check](https://jo-7-vernacular-fact-checker.hf.space/health) | API liveness endpoint |
 
 ---
 
@@ -256,7 +268,7 @@ $env:NEWSDATA_API_KEY="pub_xxxxxxxxxx"
 
 ### Setting variables on HuggingFace Spaces
 
-1. Go to your Space → **Settings** tab → **Repository secrets**
+1. Go to [HuggingFace Space](https://huggingface.co/spaces/JO-7/vernacular-fact-checker) → **Settings** tab → **Repository secrets**
 2. Click **New secret** for each variable
 3. HuggingFace injects them automatically into the container at runtime
 
@@ -358,6 +370,8 @@ curl -X POST "https://jo-7-vernacular-fact-checker.hf.space/predict-batch" \
 ## 14. Deployment
 
 ### HuggingFace Spaces (live)
+
+**Space URL:** `https://huggingface.co/spaces/JO-7/vernacular-fact-checker`
 
 ```bash
 git remote add hf https://YOUR_USERNAME:YOUR_HF_TOKEN@huggingface.co/spaces/JO-7/vernacular-fact-checker
