@@ -11,7 +11,8 @@ pinned: false
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-HuggingFace%20Spaces-blue)](https://huggingface.co/spaces/JO-7/vernacular-fact-checker)
 [![Streamlit UI](https://img.shields.io/badge/Streamlit-UI-red)](https://jo-7-vernacular-fact-checker.hf.space)
-
+[![API Docs](https://img.shields.io/badge/API-Swagger%20UI-green)](https://jo-7-vernacular-fact-checker.hf.space/docs)
+[![GitHub](https://img.shields.io/badge/GitHub-vernacular--fact--checker-black)](https://github.com/jinto-joseph/vernacular-fact-checker)
 
 High-throughput misinformation detection pipeline for Indian social media. Strips non-factual noise before verification to reduce compute cost and increase throughput — satisfying the Pipeline Optimization technique requirement.
 
@@ -23,7 +24,21 @@ High-throughput misinformation detection pipeline for Indian social media. Strip
 |---|---|
 | [HuggingFace Space](https://huggingface.co/spaces/JO-7/vernacular-fact-checker) | Main deployed app |
 | [Streamlit UI](https://jo-7-vernacular-fact-checker.hf.space) | Interactive fact-checker interface |
+| [API Docs](https://jo-7-vernacular-fact-checker.hf.space/docs) | Swagger UI for all endpoints |
+| [Health Check](https://jo-7-vernacular-fact-checker.hf.space/health) | API liveness endpoint |
 
+---
+
+## Screenshots
+
+### ✓ True — Karunya University is in Coimbatore
+![True Result](screenshots/true-karunya.png)
+
+### ✓ True — Dhurandhar 2 Plot Verified
+![True Result 2](screenshots/true-dhurandhar.png)
+
+### ✗ False — Trump is Dead (Viral Hoax Debunked)
+![False Result](screenshots/false-trump.png)
 
 ---
 
@@ -86,9 +101,10 @@ Claim Extraction                          ← lightweight heuristic
         │
         ▼
 Multi-Source Fact Retrieval (LRU-cached)
-    ├── 1. Tavily Search API              ← real-time web search across fact-check domains
-    ├── 2. NewsData.io API                ← real-time Indian news cross-reference
-    └── 3. Local fact store               ← 12 verified Indian misinformation patterns
+    ├── 1. Local fact store               ← 15 verified Indian misinformation patterns
+    ├── 2. Heuristic classifier           ← rule-based pattern matching
+    ├── 3. Tavily Search API              ← real-time web search across fact-check domains
+    └── 4. NewsData.io API                ← real-time Indian news cross-reference
         │
         ▼
 Verification                              ← verdict + confidence score
@@ -139,29 +155,33 @@ token_savings = result["original_prompt_tokens"] - result["compressed_prompt_tok
 
 ## 5. Real-Time Fact Retrieval
 
-Implemented in `fact_retrieval.py`. Three sources queried in priority order:
+Implemented in `fact_retrieval.py`. Four sources queried in priority order:
 
-### Source 1: Tavily Search API
+### Source 1: Local fact store
 
-Searches the web in real time across trusted fact-check and news domains including AltNews, BoomLive, AFP Fact Check, Snopes, Reuters, NDTV, and The Hindu. Returns an AI-synthesised answer plus ranked source links.
+15 hardcoded patterns covering the most common Indian social media misinformation topics — bank closures, currency bans, death hoaxes, free scheme scams, election misinformation, fuel prices, health advisories, military/border claims, and leader death hoaxes.
+
+### Source 2: Heuristic classifier
+
+Rule-based regex patterns that catch structural misinformation — urgency language, free money claims, death hoax patterns, share bait, and clickbait phrases.
+
+### Source 3: Tavily Search API
+
+Searches the web in real time restricted to trusted fact-check domains including AltNews, BoomLive, AFP Fact Check, Snopes, and Vishvas News. Only returns a result when explicit fact-check verdict language is found.
 
 ```bash
 # Enable: set TAVILY_API_KEY environment variable
 # Free tier: 1000 credits/month, no credit card — app.tavily.com
 ```
 
-### Source 2: NewsData.io
+### Source 4: NewsData.io
 
-Cross-references claims against real-time Indian news articles filtered by country and language.
+Cross-references claims against real-time Indian news. Only used when explicit debunking language is found in the article — never assumes True from news coverage alone.
 
 ```bash
 # Enable: set NEWSDATA_API_KEY environment variable
 # Free tier: 200 credits/day, no credit card — newsdata.io
 ```
-
-### Source 3: Local fact store
-
-12 hardcoded patterns covering the most common Indian social media misinformation topics — bank closures, currency bans, death hoaxes, free scheme scams, election misinformation, fuel prices, health advisories, and military/border claims.
 
 ### Fallback
 
@@ -181,7 +201,7 @@ python main.py
 | Token reduction (with ScaleDown) | Up to 70–80% |
 | Throughput | ~1000 posts/min with batching |
 | Avg per-post latency | < 200 ms (local) |
-| Fact retrieval sources | 3 (Tavily + NewsData + local) |
+| Fact retrieval sources | 4 (local + heuristic + Tavily + NewsData) |
 | ML classifier accuracy | ~85–95% (dataset dependent) |
 
 ---
@@ -203,7 +223,7 @@ python main.py
 vernacular-fact-checker/
 ├── main.py              # End-to-end pipeline, benchmarking, demo
 ├── preprocessing.py     # Optimization stage — ScaleDown + rule-based cleaning
-├── fact_retrieval.py    # Multi-source fact retrieval (Tavily + NewsData + local)
+├── fact_retrieval.py    # Multi-source fact retrieval (local + Tavily + NewsData)
 ├── compare_models.py    # ML model training and comparison
 ├── image_analysis.py    # ELA tamper detection + deepfake classification
 ├── api.py               # FastAPI server (5 endpoints)
@@ -212,6 +232,7 @@ vernacular-fact-checker/
 ├── requirements.txt     # All runtime dependencies
 ├── Dockerfile           # Container build (CPU-only torch)
 ├── render.yaml          # Render Blueprint deployment config
+├── screenshots/         # UI screenshots for README
 ├── artifacts/           # Generated model artifacts (gitignored)
 └── README.md
 ```
@@ -402,7 +423,7 @@ Push to GitHub, open [Render dashboard](https://dashboard.render.com) → New �
 - ScaleDown compression adds ~2–5 ms latency per post due to network round-trip
 - Tavily search coverage is stronger for English than Hinglish or regional languages
 - NewsData.io free tier is limited to 200 credits/day
-- Local fact store covers only 12 topic categories
+- Local fact store covers 15 topic categories — expands with more data
 - ML classifier requires local training — artifact not committed to repo
 
 **Future improvements:**
