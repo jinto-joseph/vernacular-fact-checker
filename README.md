@@ -352,6 +352,9 @@ api_key = os.getenv("FACTCHECK_API_KEY")
 
 ---
 
+$deployLine = "`n## Live Demo`nhttps://jo-7-vernacular-fact-checker.hf.space/docs`n"
+Add-Content "C:\Users\Lenovo\Desktop\VFN\README.md" $deployLine
+
 ## 13. Limitations and Future Work
 
 **Current limitations:**

@@ -25,6 +25,7 @@ from functools import lru_cache
 from typing import Dict, List, Sequence
 
 from preprocessing import clean_text, reduction_stats
+from fact_retrieval import retrieve_from_google
 
 # ---------------------------------------------------------------------------
 # Optional dependency detection
@@ -173,24 +174,100 @@ def _overlap_score(claim_tokens: Sequence[str], fact_tags: tuple) -> float:
 
 
 @lru_cache(maxsize=2048)
+def _google_fact_check(claim: str) -> Dict[str, object]:
+    """
+    Query the Google Fact Check Tools API for a given claim.
+
+    Returns the top result if found, or empty dict if no results or API unavailable.
+    Results are LRU-cached to handle repeated viral claims without redundant API calls.
+    """
+    api_key = os.getenv("GOOGLE_FACTCHECK_API_KEY", "")
+    if not api_key:
+        return {}
+
+    try:
+        import urllib.request
+        import urllib.parse
+        import json as _json
+
+        params = urllib.parse.urlencode({
+            "query": claim,
+            "key": api_key,
+            "languageCode": "en",
+        })
+        url = f"https://factchecktools.googleapis.com/v1alpha1/claims:search?{params}"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = _json.loads(resp.read())
+
+        claims = data.get("claims", [])
+        if not claims:
+            return {}
+
+        top = claims[0]
+        review = top.get("claimReview", [{}])[0]
+        rating = review.get("textualRating", "").lower()
+
+        # Map textual rating to our verdict system
+        if any(w in rating for w in ("false", "incorrect", "wrong", "fabricated", "fake", "no truth", "misleads")):
+            verdict = "False"
+        elif any(w in rating for w in ("true", "correct", "accurate", "verified", "real")):
+            verdict = "True"
+        else:
+            verdict = "Misleading"
+
+        return {
+            "fact_id": "GFCT",
+            "fact_text": review.get("title", top.get("text", claim)),
+            "base_verdict": verdict,
+            "retrieval_score": 0.95,
+            "source": review.get("publisher", {}).get("name", "Google Fact Check"),
+            "url": review.get("url", ""),
+            "rating": review.get("textualRating", ""),
+        }
+    except Exception:
+        return {}
+
+
+@lru_cache(maxsize=2048)
 def retrieve_fact_for_claim(claim: str) -> Dict[str, object]:
     """
     Retrieve the best-matching verified fact for a given claim.
 
-    Uses token-overlap scoring with LRU caching to handle repeated/viral
-    claims efficiently without redundant computation.
+    Strategy (in priority order):
+        1. Google Fact Check Tools API — real verified facts from AltNews,
+           AFP, Snopes, PolitiFact etc. (requires GOOGLE_FACTCHECK_API_KEY env var)
+        2. Local fact store — 12 hardcoded facts covering common Indian topics
+        3. No-match fallback — returns Unverified if neither source has a match
+
+    Results are LRU-cached to handle repeated viral claims efficiently.
 
     Args:
         claim: Extracted factual claim string.
 
     Returns:
-        dict with keys: fact_id, fact_text, base_verdict, retrieval_score.
+        dict with keys: fact_id, fact_text, base_verdict, retrieval_score,
+                        and optionally source, url, rating (from Google).
     """
+    # Priority 1: Google Fact Check API
+    google_result = _google_fact_check(claim)
+    if google_result:
+        return google_result
+
+    # Priority 2: Local fact store (tag-overlap)
     claim_tokens = claim.split()
     best_score, best_fact = max(
         ((_overlap_score(claim_tokens, fact.tags), fact) for fact in VERIFIED_FACTS),
         key=lambda x: x[0],
     )
+
+    if best_score == 0.0:
+        return {
+            "fact_id": "N/A",
+            "fact_text": "No matching fact found in the verified fact store for this claim.",
+            "base_verdict": "Unverified",
+            "retrieval_score": 0.0,
+        }
+
     return {
         "fact_id": best_fact.fact_id,
         "fact_text": best_fact.text,
@@ -255,18 +332,43 @@ def process_post(input_data: str, is_image: bool = False) -> Dict[str, object]:
     """
     Run the full fact-checking pipeline on a single post.
 
+    Retrieval priority:
+        1. Google Fact Check API (real verified facts from AFP, BOOM, Snopes etc.)
+        2. Local tag-overlap fact store (fallback if Google unavailable or no match)
+        3. ML classifier (additional signal from trained model)
+
     Args:
         input_data: Raw text string, or path to an image file when is_image=True.
         is_image:   If True, runs OCR on input_data before processing.
 
     Returns:
-        Dictionary containing every pipeline stage's output.
+        Dictionary containing every pipeline stage output.
     """
     raw_text = extract_text_from_image(input_data) if is_image else input_data
     cleaned = clean_text(raw_text)
     claim = claim_extraction(cleaned)
-    retrieved = retrieve_fact_for_claim(claim)
-    verification = verify_claim_against_fact(claim, retrieved)
+
+    # --- Retrieval: Google first, local fallback ---
+    google_result = retrieve_from_google(claim)
+
+    if google_result["found"]:
+        verification = {
+            "verdict": google_result["verdict"],
+            "confidence": google_result["retrieval_score"],
+            "matched_fact_id": "GOOGLE",
+            "matched_fact": google_result["fact_text"],
+            "retrieval_score": google_result["retrieval_score"],
+            "source": "Google Fact Check",
+            "publisher": google_result.get("publisher", ""),
+            "raw_rating": google_result.get("raw_rating", ""),
+            "url": google_result.get("url", ""),
+        }
+    else:
+        # Fallback to local tag-overlap store
+        retrieved = retrieve_fact_for_claim(claim)
+        verification = verify_claim_against_fact(claim, retrieved)
+        verification["source"] = "local_factstore"
+
     ml_result = classify_fake_news_ml(raw_text)
 
     return {
