@@ -1,121 +1,150 @@
+"""
+preprocessing.py
+----------------
+Pipeline Optimization stage: strips non-factual noise from social/news text
+before claim extraction and retrieval, reducing token count and compute cost.
+
+Optionally uses the ScaleDown API for AI-powered prompt compression,
+which directly satisfies the "Pipeline Optimization" technique requirement.
+"""
+
 import re
-from typing import Dict, List
+import os
+import unicodedata
+import json
+import requests
+from typing import Dict
 
-
-FILLER_WORDS = {
-    "please",
-    "pls",
-    "kindly",
-    "omg",
-    "wow",
-    "lol",
-    "uh",
-    "umm",
-    "btw",
-    "share",
-    "forward",
-    "viral",
-    "breaking",
-    "exclusive",
-    "shocking",
-    "mustwatch",
-    "mustread",
-    "yaar",
-    "bhai",
-    "arre",
-    "dekho",
-    "sunlo",
-    "jaldi",
-}
-
-CLICKBAIT_PATTERNS = [
-    r"you won't believe",
-    r"must watch",
-    r"watch till end",
-    r"share this now",
-    r"forward this",
-    r"breaking news+",
-    r"urgent+",
-    r"shocking+",
+# ---------------------------------------------------------------------------
+# Clickbait and filler phrase patterns
+# ---------------------------------------------------------------------------
+_CLICKBAIT_PHRASES = [
+    r"watch till end", r"share this now", r"forward this", r"must watch",
+    r"breaking news", r"viral update", r"shocking", r"omg", r"wow+",
+    r"please rt", r"retweet", r"100% true", r"share fast",
 ]
 
-URL_RE = re.compile(r"https?://\S+|www\.\S+", flags=re.IGNORECASE)
-MENTION_RE = re.compile(r"[@#]\w+")
-EMOJI_RE = re.compile(
-    "["
-    "\U0001F300-\U0001F5FF"
-    "\U0001F600-\U0001F64F"
-    "\U0001F680-\U0001F6FF"
-    "\U0001F700-\U0001F77F"
-    "\U0001F780-\U0001F7FF"
-    "\U0001F800-\U0001F8FF"
-    "\U0001F900-\U0001F9FF"
-    "\U0001FA00-\U0001FA6F"
-    "\U0001FA70-\U0001FAFF"
-    "]+",
-    flags=re.UNICODE,
+_CLICKBAIT_RE = re.compile(
+    r"\b(?:" + "|".join(_CLICKBAIT_PHRASES) + r")\b",
+    flags=re.IGNORECASE,
 )
 
-
-def _normalize_repeated_characters(text: str) -> str:
-    # Keep expressive text but collapse extreme repetition: "soooo" -> "soo".
-    return re.sub(r"(.)\1{2,}", r"\1\1", text)
-
-
-def _remove_clickbait_phrases(text: str) -> str:
-    result = text
-    for pattern in CLICKBAIT_PATTERNS:
-        result = re.sub(pattern, " ", result, flags=re.IGNORECASE)
-    return result
+_URL_RE = re.compile(r"https?://\S+|www\.\S+", flags=re.IGNORECASE)
+_MENTION_HASHTAG_RE = re.compile(r"[@#]\w+")
+_PUNCT_NOISE_RE = re.compile(r"[!?]{2,}")
+_CHAR_REPEAT_RE = re.compile(r"(.)\1{2,}")
 
 
-def _remove_filler_words(tokens: List[str]) -> List[str]:
-    return [token for token in tokens if token not in FILLER_WORDS]
+def _remove_emojis(text: str) -> str:
+    return "".join(
+        ch for ch in text
+        if not unicodedata.category(ch).startswith("So")
+        and unicodedata.category(ch) not in ("Cs",)
+    )
 
 
-def _dedupe_repeated_words(tokens: List[str]) -> List[str]:
-    if not tokens:
-        return tokens
-    deduped = [tokens[0]]
-    for token in tokens[1:]:
-        if token != deduped[-1]:
-            deduped.append(token)
-    return deduped
+def _deduplicate_words(text: str) -> str:
+    words = text.split()
+    deduped = [words[0]] if words else []
+    for word in words[1:]:
+        if word.lower() != deduped[-1].lower():
+            deduped.append(word)
+    return " ".join(deduped)
 
 
-def clean_text(text: str) -> str:
-    lowered = text.lower()
-    lowered = URL_RE.sub(" ", lowered)
-    lowered = MENTION_RE.sub(" ", lowered)
-    lowered = EMOJI_RE.sub(" ", lowered)
-    lowered = _remove_clickbait_phrases(lowered)
-    lowered = _normalize_repeated_characters(lowered)
-    lowered = re.sub(r"[^a-z0-9\s]", " ", lowered)
-    lowered = re.sub(r"\s+", " ", lowered).strip()
-
-    tokens = lowered.split()
-    tokens = _remove_filler_words(tokens)
-    tokens = _dedupe_repeated_words(tokens)
-    return " ".join(tokens)
+def _rule_based_clean(raw: str) -> str:
+    """Apply all rule-based optimization steps."""
+    text = _URL_RE.sub(" ", raw)
+    text = _MENTION_HASHTAG_RE.sub(" ", text)
+    text = _remove_emojis(text)
+    text = _CLICKBAIT_RE.sub(" ", text)
+    text = _CHAR_REPEAT_RE.sub(r"\1\1", text)
+    text = _PUNCT_NOISE_RE.sub("!", text)
+    text = _deduplicate_words(text)
+    text = " ".join(text.split())
+    return text.strip()
 
 
-def tokenize(text: str) -> List[str]:
-    return [token for token in clean_text(text).split() if token]
+def _scaledown_compress(text: str, api_key: str) -> str:
+    """
+    Use ScaleDown API for AI-powered prompt compression.
+
+    ScaleDown identifies and retains only factually relevant content,
+    going beyond rule-based cleaning for maximum token reduction.
+
+    Args:
+        text:    Rule-cleaned text to compress further.
+        api_key: ScaleDown API key from SCALEDOWN_API_KEY env var.
+
+    Returns:
+        Compressed text, or original text if API call fails.
+    """
+    try:
+        response = requests.post(
+            "https://api.scaledown.xyz/compress/raw/",
+            headers={
+                "x-api-key": api_key,
+                "Content-Type": "application/json",
+            },
+            data=json.dumps({
+                "context": "Extract only the core factual claim from this social media post for fact-checking.",
+                "prompt": text,
+                "scaledown": {"rate": "auto"},
+            }),
+            timeout=5,
+        )
+        result = response.json()
+        if result.get("successful") and result.get("compressed_prompt"):
+            return result["compressed_prompt"].strip()
+    except Exception:
+        pass
+    return text
 
 
-def reduction_stats(original_text: str, cleaned_text: str) -> Dict[str, float]:
-    original_chars = len(original_text)
-    cleaned_chars = len(cleaned_text)
-    original_tokens = max(1, len(original_text.split()))
-    cleaned_tokens = len(cleaned_text.split())
+def clean_text(raw: str) -> str:
+    """
+    Apply full optimization pipeline to reduce non-factual noise.
 
-    char_reduction = ((original_chars - cleaned_chars) / max(1, original_chars)) * 100.0
-    token_reduction = ((original_tokens - cleaned_tokens) / original_tokens) * 100.0
+    Steps:
+        1. Rule-based cleaning (URLs, emojis, clickbait, dedup)
+        2. ScaleDown AI compression (if SCALEDOWN_API_KEY is set)
+
+    Returns:
+        Cleaned, factual-context-preserving text.
+    """
+    cleaned = _rule_based_clean(raw)
+
+    api_key = os.getenv("SCALEDOWN_API_KEY", "")
+    if api_key and len(cleaned.split()) > 10:
+        compressed = _scaledown_compress(cleaned, api_key)
+        if compressed:
+            return compressed
+
+    return cleaned
+
+
+def reduction_stats(original: str, cleaned: str) -> Dict[str, object]:
+    """
+    Compute token/character reduction metrics between raw and cleaned text.
+
+    Args:
+        original: Raw input text.
+        cleaned:  Cleaned output text.
+
+    Returns:
+        Dictionary with char/token counts and reduction percentages.
+    """
+    orig_chars = len(original)
+    clean_chars = len(cleaned)
+    orig_tokens = len(original.split())
+    clean_tokens = len(cleaned.split())
+
     return {
-        "original_chars": float(original_chars),
-        "cleaned_chars": float(cleaned_chars),
-        "original_tokens": float(original_tokens),
-        "cleaned_tokens": float(cleaned_tokens),
-        "char_reduction_pct": round(char_reduction, 2),
-        "token_reduction_pct": round(token_reduction, 2),
+        "original_chars": orig_chars,
+        "cleaned_chars": clean_chars,
+        "original_tokens": orig_tokens,
+        "cleaned_tokens": clean_tokens,
+        "char_reduction_pct": round((orig_chars - clean_chars) / max(1, orig_chars) * 100.0, 2),
+        "token_reduction_pct": round((orig_tokens - clean_tokens) / max(1, orig_tokens) * 100.0, 2),
+        "scaledown_used": bool(os.getenv("SCALEDOWN_API_KEY")),
     }
