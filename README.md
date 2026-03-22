@@ -23,8 +23,7 @@ High-throughput misinformation detection pipeline for Indian social media. Strip
 |---|---|
 | [HuggingFace Space](https://huggingface.co/spaces/JO-7/vernacular-fact-checker) | Main deployed app |
 | [Streamlit UI](https://jo-7-vernacular-fact-checker.hf.space) | Interactive fact-checker interface |
-| [API Docs](https://jo-7-vernacular-fact-checker.hf.space/docs) | Swagger UI for all endpoints |
-| [Health Check](https://jo-7-vernacular-fact-checker.hf.space/health) | API liveness endpoint |
+
 
 ---
 
