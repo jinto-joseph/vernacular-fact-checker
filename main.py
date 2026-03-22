@@ -7,7 +7,7 @@ Stages:
     1. Ingestion        — raw text or OCR from image
     2. Optimization     — ScaleDown AI compression + rule-based cleaning
     3. Claim Extraction — lightweight heuristic
-    4. Fact Retrieval   — Google Fact Check → MediaStack → local store
+    4. Fact Retrieval   — Tavily Search → NewsData.io → local store
     5. Verification     — verdict + confidence score
     6. ML Classification — optional trained classifier
 
@@ -37,6 +37,11 @@ OCR_AVAILABLE: bool = (
 # ---------------------------------------------------------------------------
 @lru_cache(maxsize=1)
 def _load_ml_model(model_path: str):
+    """
+    Load a trained scikit-learn pipeline from disk.
+    Checks multiple candidate paths in priority order.
+    Returns None if no artifact is found.
+    """
     candidate_paths = [
         model_path,
         "artifacts/best_fake_news_model.joblib",
@@ -53,6 +58,10 @@ def classify_fake_news_ml(
     text: str,
     model_path: str = "artifacts/fake_news_model.joblib",
 ) -> Dict[str, object]:
+    """
+    Run ML fake-news classification on raw text.
+    Returns available=False if no trained artifact is found.
+    """
     model = _load_ml_model(model_path)
     if model is None:
         return {"available": False, "prediction": "N/A", "model_path": model_path}
@@ -64,6 +73,13 @@ def classify_fake_news_ml(
 # OCR
 # ---------------------------------------------------------------------------
 def extract_text_from_image(image_path: str) -> str:
+    """
+    Extract text from an image using pytesseract OCR.
+
+    Raises:
+        RuntimeError: If pytesseract or pillow are not installed.
+        FileNotFoundError: If the image file does not exist.
+    """
     if not OCR_AVAILABLE:
         raise RuntimeError("OCR dependencies not installed. Run: pip install pytesseract pillow")
     if not os.path.exists(image_path):
@@ -77,7 +93,10 @@ def extract_text_from_image(image_path: str) -> str:
 # Claim extraction
 # ---------------------------------------------------------------------------
 def claim_extraction(cleaned_text: str) -> str:
-    """Extract the most likely factual claim — longest sentence heuristic."""
+    """
+    Extract the most likely factual claim using a longest-sentence heuristic.
+    Keeps this stage lightweight for high-throughput processing.
+    """
     sentences = [s.strip() for s in cleaned_text.split(".") if s.strip()]
     if not sentences:
         return cleaned_text
@@ -89,10 +108,13 @@ def claim_extraction(cleaned_text: str) -> str:
 # ---------------------------------------------------------------------------
 def verify_claim(claim: str) -> Dict[str, object]:
     """
-    Retrieve best fact and produce a verdict + confidence score.
+    Retrieve best matching fact and produce a verdict + confidence score.
 
-    Uses fact_retrieval.retrieve_fact() which queries sources in priority order:
-    Google Fact Check → MediaStack → local store → Unverified fallback.
+    Uses fact_retrieval.retrieve_fact() which queries in priority order:
+        1. Tavily Search API  — real-time web search across fact-check domains
+        2. NewsData.io API    — real-time Indian news cross-reference
+        3. Local fact store   — 12 hardcoded Indian misinformation patterns
+        4. Unverified fallback
     """
     retrieved = retrieve_fact(claim)
     score = float(retrieved["retrieval_score"])
@@ -126,11 +148,11 @@ def process_post(input_data: str, is_image: bool = False) -> Dict[str, object]:
     Run the full fact-checking pipeline on a single post.
 
     Args:
-        input_data: Raw text, or image path when is_image=True.
-        is_image:   Run OCR on input_data before processing.
+        input_data: Raw text string, or image path when is_image=True.
+        is_image:   If True, runs OCR on input_data before processing.
 
     Returns:
-        Full pipeline output dictionary.
+        Full pipeline output dictionary including all stage results.
     """
     raw_text = extract_text_from_image(input_data) if is_image else input_data
     cleaned = clean_text(raw_text)
@@ -153,7 +175,16 @@ def process_post(input_data: str, is_image: bool = False) -> Dict[str, object]:
 # Batch processing
 # ---------------------------------------------------------------------------
 def process_batch(posts: Sequence[str], workers: int = 8) -> List[Dict[str, object]]:
-    """Process a list of posts concurrently using a thread pool."""
+    """
+    Process a list of posts concurrently using a thread pool.
+
+    Args:
+        posts:   Sequence of raw text strings.
+        workers: Number of parallel worker threads (default: 8).
+
+    Returns:
+        List of per-post result dicts, each annotated with pipeline_latency_ms.
+    """
     start = time.perf_counter()
     with ThreadPoolExecutor(max_workers=workers) as executor:
         results = list(executor.map(process_post, posts))
@@ -168,6 +199,16 @@ def process_batch(posts: Sequence[str], workers: int = 8) -> List[Dict[str, obje
 # Benchmarking
 # ---------------------------------------------------------------------------
 def benchmark_pipeline(sample_posts: Sequence[str], runs: int = 3) -> Dict[str, float]:
+    """
+    Measure throughput, latency, token reduction, and estimated cost savings.
+
+    Args:
+        sample_posts: Posts to benchmark against.
+        runs:         Number of repeated runs for stable averages.
+
+    Returns:
+        Dictionary of aggregate benchmark metrics.
+    """
     total_chars_before = total_chars_after = 0
     total_tokens_before = total_tokens_after = 0
     total_elapsed = 0.0
@@ -200,10 +241,12 @@ def benchmark_pipeline(sample_posts: Sequence[str], runs: int = 3) -> Dict[str, 
         "char_reduction_pct": round(char_reduction_pct, 2),
         "estimated_cost_before_usd": round(base_cost, 4),
         "estimated_cost_after_usd": round(optimized_cost, 4),
-        "estimated_cost_savings_pct": round((base_cost - optimized_cost) / max(1e-9, base_cost) * 100.0, 2),
-        "scaledown_compression_active": bool(os.getenv("SCALEDOWN_API_KEY")),
-        "google_factcheck_active": bool(os.getenv("GOOGLE_FACTCHECK_API_KEY")),
-        "mediastack_active": bool(os.getenv("MEDIASTACK_API_KEY")),
+        "estimated_cost_savings_pct": round(
+            (base_cost - optimized_cost) / max(1e-9, base_cost) * 100.0, 2
+        ),
+        "scaledown_active": bool(os.getenv("SCALEDOWN_API_KEY")),
+        "tavily_active": bool(os.getenv("TAVILY_API_KEY")),
+        "newsdata_active": bool(os.getenv("NEWSDATA_API_KEY")),
     }
 
 
@@ -220,6 +263,7 @@ DEMO_POSTS = [
 
 
 def demo() -> None:
+    """Run the pipeline on curated demo posts and print a benchmark summary."""
     results = process_batch(DEMO_POSTS)
 
     print("=" * 60)

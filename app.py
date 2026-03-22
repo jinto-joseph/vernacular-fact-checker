@@ -414,11 +414,25 @@ def render_result(result: dict):
     st.markdown(f'<div class="claim-box">"{claim}"</div>', unsafe_allow_html=True)
 
     # Matched fact
-    st.markdown('<div class="section-label">Matched verified fact</div>', unsafe_allow_html=True)
+    source = v.get("source", "local_factstore")
+    publisher = v.get("publisher", "")
+    url = v.get("url", "")
+    raw_rating = v.get("raw_rating", "")
+
+    source_badge = "" 
+    if source == "Google Fact Check":
+        source_badge = f"<span style='background:#1a3a1a;color:#52c47a;font-size:0.7rem;padding:2px 8px;border-radius:10px;margin-left:8px;font-family:Syne,sans-serif'>GOOGLE VERIFIED</span>"
+    
+    publisher_line = f"<div style='font-size:0.75rem;color:#4a6a4a;margin-top:0.4rem'>Source: {publisher}" + (f" &nbsp;·&nbsp; <a href='{url}' target='_blank' style='color:#52c47a'>View fact-check ↗</a>" if url else "") + "</div>" if publisher else ""
+    rating_line = f"<div style='font-size:0.75rem;color:#6b6b7e;margin-top:0.2rem'>Rating: {raw_rating}</div>" if raw_rating else ""
+
+    st.markdown(f"<div class='section-label'>Matched verified fact {source_badge}</div>", unsafe_allow_html=True)
     st.markdown(
         f"""<div class="fact-box">
         <div class="fact-id">{fact_id}</div>
         {matched_fact}
+        {publisher_line}
+        {rating_line}
         </div>""",
         unsafe_allow_html=True,
     )
@@ -611,14 +625,16 @@ with tab3:
 
                             st.markdown('<div class="section-label">Tamper analysis (ELA)</div>', unsafe_allow_html=True)
                             ela = tamper.get("ela_score", 0)
-                            ela_pct = min(ela / 30, 1.0)
-                            ela_color = "#e05252" if ela > 15 else "#52c47a"
+                            ela_level = tamper.get("ela_level", "clean")
+                            ela_confidence = tamper.get("confidence", "")
+                            ela_pct = min(ela / 60, 1.0)
+                            ela_color = {"clean": "#52c47a", "borderline": "#e0a052", "suspicious": "#e07852", "high": "#e05252"}.get(ela_level, "#52c47a")
                             st.markdown(
                                 f"""<div style="margin:0.3rem 0 0.8rem 0">
                                 <div style="height:4px;background:#1e1e2e;border-radius:2px">
                                   <div style="height:4px;width:{int(ela_pct*100)}%;background:{ela_color};border-radius:2px"></div>
                                 </div>
-                                <div style="font-size:0.78rem;color:#6b6b7e;margin-top:0.3rem">ELA score: {ela:.2f} (threshold: 15)</div>
+                                <div style="font-size:0.78rem;color:#6b6b7e;margin-top:0.3rem">ELA score: {ela:.2f} · Level: {ela_level} · {ela_confidence}</div>
                                 </div>""",
                                 unsafe_allow_html=True,
                             )
@@ -627,12 +643,15 @@ with tab3:
                                 f'<span class="metric-pill">{k}: <span class="metric-val">{v}</span></span>'
                                 for k, v in [
                                     ("Tamper detected", str(tamper.get("tamper_detected", False))),
+                                    ("ELA level", ela_level),
                                     ("Camera metadata", str(tamper.get("has_camera_metadata", False))),
                                     ("Deepfake score", str(deepfake.get("deepfake_score", 0.0))),
                                     ("Model available", str(deepfake.get("model_available", False))),
                                 ]
                             )
                             st.markdown(f"<div>{pills}</div>", unsafe_allow_html=True)
+                            if ela_confidence:
+                                st.markdown(f'<div class="fact-box">{ela_confidence}</div>', unsafe_allow_html=True)
 
                             with st.expander("Raw JSON response"):
                                 st.json(result)

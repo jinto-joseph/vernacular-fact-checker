@@ -1,4 +1,4 @@
 Rank,Model,Accuracy
-1,LinearSVC,99.45
-2,RandomForestClassifier,99.25
-3,MLPClassifier,98.85
+1,LinearSVC,99.35
+2,RandomForestClassifier,98.95
+3,MLPClassifier,98.7
