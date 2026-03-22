@@ -11,8 +11,7 @@ pinned: false
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-HuggingFace%20Spaces-blue)](https://huggingface.co/spaces/JO-7/vernacular-fact-checker)
 [![Streamlit UI](https://img.shields.io/badge/Streamlit-UI-red)](https://jo-7-vernacular-fact-checker.hf.space)
-[![API Docs](https://img.shields.io/badge/API-Swagger%20UI-green)](https://jo-7-vernacular-fact-checker.hf.space/docs)
-[![GitHub](https://img.shields.io/badge/GitHub-vernacular--fact--checker-black)](https://github.com/jinto-joseph/vernacular-fact-checker)
+
 
 High-throughput misinformation detection pipeline for Indian social media. Strips non-factual noise before verification to reduce compute cost and increase throughput — satisfying the Pipeline Optimization technique requirement.
 
