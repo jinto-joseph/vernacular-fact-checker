@@ -32,13 +32,13 @@ High-throughput misinformation detection pipeline for Indian social media. Strip
 ## Screenshots
 
 ### ✓ True — Karunya University is in Coimbatore
-![True Result](screenshots/true-karunya.png)
+![True Result](screenshots/karunya_true.png)
 
 ### ✓ True — Dhurandhar 2 Plot Verified
-![True Result 2](screenshots/true-dhurandhar.png)
+![True Result 2](screenshots/dhurandhar.png)
 
 ### ✗ False — Trump is Dead (Viral Hoax Debunked)
-![False Result](screenshots/false-trump.png)
+![False Result](screenshots/false.png)
 
 ---
 
