@@ -34,7 +34,6 @@ High-throughput misinformation detection pipeline for Indian social media. Strip
 13. [API Reference](#13-api-reference)
 14. [Deployment](#14-deployment)
 15. [Limitations and Future Work](#15-limitations-and-future-work)
-16. [Demo Script](#16-demo-script)
 
 ---
 
@@ -77,9 +76,9 @@ Claim Extraction                          ← lightweight heuristic
         │
         ▼
 Multi-Source Fact Retrieval (LRU-cached)
-    ├── 1. Google Fact Check Tools API    ← AltNews, AFP, Snopes, PolitiFact
-    ├── 2. MediaStack News API            ← real-time Indian news
-    └── 3. Local fact store               ← 12 verified Indian patterns
+    ├── 1. Tavily Search API              ← real-time web search across fact-check domains
+    ├── 2. NewsData.io API                ← real-time Indian news cross-reference
+    └── 3. Local fact store               ← 12 verified Indian misinformation patterns
         │
         ▼
 Verification                              ← verdict + confidence score
@@ -115,13 +114,13 @@ Implemented in `preprocessing.py`.
 After rule-based cleaning, text is passed to the [ScaleDown API](https://scaledown.xyz) which uses small language models to identify and retain only factually relevant content — going beyond what rules can achieve.
 
 ```python
-# ScaleDown reduces token count by identifying non-factual content
 result = requests.post("https://api.scaledown.xyz/compress/raw/", ...)
 compressed_prompt = result["compressed_prompt"]
 token_savings = result["original_prompt_tokens"] - result["compressed_prompt_tokens"]
 ```
 
 ### Performance techniques
+
 - Batch processing with `ThreadPoolExecutor` (8 workers default)
 - Retrieval caching via `functools.lru_cache` (2048-entry LRU)
 - ScaleDown only called for posts > 10 tokens (avoids overhead on short text)
@@ -132,28 +131,30 @@ token_savings = result["original_prompt_tokens"] - result["compressed_prompt_tok
 
 Implemented in `fact_retrieval.py`. Three sources queried in priority order:
 
-### Source 1: Google Fact Check Tools API
-Queries a database of verified claims from publishers including AltNews (India), AFP Fact Check, Snopes, PolitiFact, and more.
+### Source 1: Tavily Search API
+
+Searches the web in real time across trusted fact-check and news domains including AltNews, BoomLive, AFP Fact Check, Snopes, Reuters, NDTV, and The Hindu. Returns an AI-synthesised answer plus ranked source links.
 
 ```bash
-# Enable: set GOOGLE_FACTCHECK_API_KEY environment variable
-# Free tier: available via Google Cloud Console
-# Endpoint: https://factchecktools.googleapis.com/v1alpha1/claims:search
+# Enable: set TAVILY_API_KEY environment variable
+# Free tier: 1000 credits/month, no credit card — app.tavily.com
 ```
 
-### Source 2: MediaStack News API
-Cross-references claims against real-time Indian news articles.
+### Source 2: NewsData.io
+
+Cross-references claims against real-time Indian news articles filtered by country and language.
 
 ```bash
-# Enable: set MEDIASTACK_API_KEY environment variable  
-# Free tier: 500 requests/month at mediastack.com
-# Endpoint: http://api.mediastack.com/v1/news
+# Enable: set NEWSDATA_API_KEY environment variable
+# Free tier: 200 credits/day, no credit card — newsdata.io
 ```
 
 ### Source 3: Local fact store
-12 hardcoded patterns covering the most common Indian social media misinformation topics (bank closures, currency bans, death hoaxes, free scheme scams, election misinformation etc.)
+
+12 hardcoded patterns covering the most common Indian social media misinformation topics — bank closures, currency bans, death hoaxes, free scheme scams, election misinformation, fuel prices, health advisories, and military/border claims.
 
 ### Fallback
+
 If no source matches, returns `Unverified` — an honest no-match response rather than a misleading guess.
 
 ---
@@ -170,7 +171,7 @@ python main.py
 | Token reduction (with ScaleDown) | Up to 70–80% |
 | Throughput | ~1000 posts/min with batching |
 | Avg per-post latency | < 200 ms (local) |
-| Fact retrieval sources | 3 (Google + MediaStack + local) |
+| Fact retrieval sources | 3 (Tavily + NewsData + local) |
 | ML classifier accuracy | ~85–95% (dataset dependent) |
 
 ---
@@ -181,8 +182,8 @@ python main.py
 - **LRU caching:** viral claims are processed once and cached — handles repeated misinformation efficiently
 - **Modular retrieval:** swap local store for FAISS or a production vector DB without touching other pipeline stages
 - **Cost reduction:** ScaleDown compression reduces downstream LLM/API token spend proportionally
-- **Image support:** OCR → same pipeline for screenshot and poster misinformation
-- **Graceful degradation:** every API is optional; pipeline works without any external keys
+- **Image support:** OCR path handles screenshot and poster misinformation; ELA + deepfake detection for manipulated images
+- **Graceful degradation:** every API is optional — pipeline works without any external keys
 
 ---
 
@@ -192,7 +193,7 @@ python main.py
 vernacular-fact-checker/
 ├── main.py              # End-to-end pipeline, benchmarking, demo
 ├── preprocessing.py     # Optimization stage — ScaleDown + rule-based cleaning
-├── fact_retrieval.py    # Multi-source fact retrieval (Google + MediaStack + local)
+├── fact_retrieval.py    # Multi-source fact retrieval (Tavily + NewsData + local)
 ├── compare_models.py    # ML model training and comparison
 ├── image_analysis.py    # ELA tamper detection + deepfake classification
 ├── api.py               # FastAPI server (5 endpoints)
@@ -218,6 +219,7 @@ python -m venv .venv
 ```
 
 Activate virtual environment:
+
 ```bash
 # Windows
 .venv\Scripts\activate
@@ -227,6 +229,7 @@ source .venv/bin/activate
 ```
 
 Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -235,32 +238,35 @@ pip install -r requirements.txt
 
 ## 10. Environment Variables and API Keys
 
-Set these before running. None are required — the pipeline degrades gracefully without them.
+All keys are optional — the pipeline degrades gracefully without them, falling back to the local fact store.
 
-| Variable | Service | How to get | Free tier |
+| Variable | Service | Sign up | Free tier |
 |---|---|---|---|
-| `SCALEDOWN_API_KEY` | ScaleDown compression | [scaledown.xyz](https://scaledown.xyz) | Contact sales |
-| `GOOGLE_FACTCHECK_API_KEY` | Google Fact Check Tools | [Google Cloud Console](https://console.cloud.google.com) → Enable Fact Check Tools API | Free |
-| `MEDIASTACK_API_KEY` | MediaStack News | [mediastack.com](https://mediastack.com) | 500 req/month free |
+| `SCALEDOWN_API_KEY` | ScaleDown prompt compression | [scaledown.xyz](https://scaledown.xyz) | Contact sales |
+| `TAVILY_API_KEY` | Tavily real-time web search | [app.tavily.com](https://app.tavily.com) | 1000 credits/month, no credit card |
+| `NEWSDATA_API_KEY` | NewsData.io Indian news | [newsdata.io](https://newsdata.io) | 200 credits/day, no credit card |
 
-### Setting variables locally (Windows)
+### Setting variables locally (Windows PowerShell)
+
 ```powershell
 $env:SCALEDOWN_API_KEY="your_key_here"
-$env:GOOGLE_FACTCHECK_API_KEY="your_key_here"
-$env:MEDIASTACK_API_KEY="your_key_here"
+$env:TAVILY_API_KEY="tvly-xxxxxxxxxx"
+$env:NEWSDATA_API_KEY="pub_xxxxxxxxxx"
 ```
 
 ### Setting variables on HuggingFace Spaces
-1. Go to your Space → **Settings** → **Repository secrets**
-2. Add each variable as a secret
-3. HuggingFace injects them automatically at runtime
+
+1. Go to your Space → **Settings** tab → **Repository secrets**
+2. Click **New secret** for each variable
+3. HuggingFace injects them automatically into the container at runtime
 
 ### Setting variables for Docker
+
 ```bash
 docker run --rm -p 7860:7860 \
   -e SCALEDOWN_API_KEY=your_key \
-  -e GOOGLE_FACTCHECK_API_KEY=your_key \
-  -e MEDIASTACK_API_KEY=your_key \
+  -e TAVILY_API_KEY=your_key \
+  -e NEWSDATA_API_KEY=your_key \
   vernacular-fact-checker:latest
 ```
 
@@ -277,7 +283,7 @@ python main.py
 # Train and compare ML models
 python compare_models.py --csv-root "News _dataset" --txt-root "FakeNewsData"
 
-# Quick training run (3000 samples)
+# Quick training run (3000 samples, faster)
 python compare_models.py --csv-root "News _dataset" --txt-root "FakeNewsData" --max-samples 3000
 
 # Start API server
@@ -301,8 +307,8 @@ Trains three classifiers on TF-IDF features and saves the best performer:
 
 **Dataset format:**
 
-- CSV: `Fake.csv`, `True.csv` with a `text` or `title` column
-- TXT: class-named subfolders (`Fake/`, `True/`) with `.txt` files
+- CSV source: `Fake.csv`, `True.csv` with a `text` or `title` column
+- TXT source: class-named subfolders (`Fake/`, `True/`) containing `.txt` files
 
 **Artifacts saved to `artifacts/`:**
 
@@ -310,7 +316,7 @@ Trains three classifiers on TF-IDF features and saves the best performer:
 |---|---|
 | `best_fake_news_model.joblib` | Best-performing trained pipeline |
 | `model_comparison.csv` | Ranked accuracy table |
-| `model_reports.joblib` | Full classification reports |
+| `model_reports.joblib` | Full classification reports for all models |
 
 > **Note on accuracy:** Very high scores (>99%) on public datasets are common due to duplicate-heavy content. Always verify with clean stratified splits using `--max-samples`.
 
@@ -358,7 +364,7 @@ git remote add hf https://YOUR_USERNAME:YOUR_HF_TOKEN@huggingface.co/spaces/JO-7
 git push hf master:main --force
 ```
 
-Set API keys in Space Settings → Repository secrets.
+Add API keys in Space → **Settings** → **Repository secrets**.
 
 ### Docker (local)
 
@@ -366,52 +372,31 @@ Set API keys in Space Settings → Repository secrets.
 docker build -t vernacular-fact-checker:latest .
 docker run --rm -p 7860:7860 \
   -e SCALEDOWN_API_KEY=your_key \
-  -e GOOGLE_FACTCHECK_API_KEY=your_key \
+  -e TAVILY_API_KEY=your_key \
+  -e NEWSDATA_API_KEY=your_key \
   vernacular-fact-checker:latest
 ```
 
 ### Render (Blueprint)
 
-Push to GitHub, connect repo in Render dashboard → New → Blueprint. Set environment variables in Render's environment settings.
+Push to GitHub, open [Render dashboard](https://dashboard.render.com) → New → Blueprint → connect repository. Set environment variables in Render's environment settings panel.
 
 ---
 
 ## 15. Limitations and Future Work
 
 **Current limitations:**
-- ScaleDown compression adds ~2–5 ms latency per post (network round-trip)
-- Google Fact Check API coverage is stronger for English than Hinglish
-- MediaStack free tier limited to 500 requests/month
+
+- ScaleDown compression adds ~2–5 ms latency per post due to network round-trip
+- Tavily search coverage is stronger for English than Hinglish or regional languages
+- NewsData.io free tier is limited to 200 credits/day
 - Local fact store covers only 12 topic categories
-- ML classifier requires local training — artifact not included in repo
+- ML classifier requires local training — artifact not committed to repo
 
 **Future improvements:**
+
 - FAISS vector store for semantic retrieval at scale
-- Multilingual support (Hindi, Tamil, Telugu) via IndicNLP
+- Multilingual support for Hindi, Tamil, and Telugu via IndicNLP
 - Temporal re-ranking to deprioritize outdated facts
-- Source trust scoring (government sources > blogs)
-- Webhook-based real-time social media monitoring
-
----
-
-## 16. Demo Script
-
-**2–3 minute flow for judges:**
-
-1. Open `https://jo-7-vernacular-fact-checker.hf.space`
-2. Paste a noisy social post — show cleaned text and token reduction %
-3. Show extracted claim and matched verified fact with source
-4. Show verdict + confidence — demonstrate False, True, and Misleading cases
-5. Upload a screenshot — show OCR → same pipeline
-6. Upload a manipulated image — show ELA tamper detection result
-7. Run batch check — show throughput and cost savings
-
-**Speaking points:**
-
-> "We optimize noisy social text before verification using ScaleDown AI compression — this directly reduces token cost and increases throughput at scale."
-
-> "Our retrieval queries Google Fact Check Tools first, which covers verified claims from AltNews, AFP, and Snopes — real sources used by professional fact-checkers in India."
-
-> "The architecture is stateless and horizontally scalable. Every external API is optional — the pipeline degrades gracefully so it never goes down."
-
-> "We trained and compared MLP, LinearSVC, and RandomForest classifiers, selecting the best by test accuracy on a stratified split."
+- Source trust scoring to weight government and established outlets higher
+- Webhook-based real-time social media feed monitoring
